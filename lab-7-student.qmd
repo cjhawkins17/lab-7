@@ -1,9 +1,10 @@
 ---
 title: "Lab 7: Functions + Fish"
-author: "Your name here!"
+author: "Christopher Hawkins"
 format: html
 editor: source
 embed-resources: true
+code-fold: true
 ---
 
 The goal of this lab is learn more about exploring missing data and writing
@@ -11,8 +12,14 @@ modular code.
 
 ```{r}
 #| label: setup
+#| message: false
 
+# Load  required libraries
+library(tidyverse)
+library(here)
 
+# Read the CSV file
+data <- read.csv(here("data", "BlackfootFish.csv"))
 ```
 
 ## The Data
@@ -45,6 +52,12 @@ measurement errors.
 ```{r}
 #| label: find-missing-values
 
+# Count the number of missing values for each variable
+data |>
+  summarise(
+    across(
+      everything(),
+      ~ sum(is.na(.))))
 ```
 
 **2. Create ONE thoughtful visualization that explores the frequency of missing values across the different years, sections, and trips.**
@@ -52,6 +65,25 @@ measurement errors.
 ```{r}
 #| label: visual-of-missing-values-over-time
 
+# Summarize data to count missing values in 'weight' by 'year', 'section', and 'trip'
+data |>
+  group_by(year, section, trip) |>
+  summarize(missing_weight = sum(is.na(weight)), .groups = "drop") |>
+  # Create a combined label for year and trip
+  mutate(year_trip = paste(year, trip, sep = "-")) |>
+# Plotting the data
+ggplot(mapping = aes(x = missing_weight, y = year_trip, fill = section)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  labs(
+    title = "Count of Missing Values in Weight by Year, Section, and Trip",
+    subtitle = "Year-Trip #",
+    x = "Count of Missing Weight Values",
+    y = "",
+    fill = "Section"
+  ) +
+  theme_minimal()
+
+  
 ```
 
 ## Rescaling the Data
@@ -72,7 +104,7 @@ I might write the following `R` code to carry out the rescaling procedure for th
 #| echo: true
 #| eval: false
 
-fish <- fish |> 
+fish <- data |> 
   mutate(length = (length - min(length, na.rm = TRUE)) / 
            (max(length, na.rm = TRUE) - min(length, na.rm = TRUE)), 
          weight = (weight - min(weight, na.rm = TRUE)) / 
@@ -84,6 +116,7 @@ understand the intent of the process. *Additionally, it can make it very difficu
 
 **3. What is the mistake I made in the above rescaling code?**
 
+The portion of the code that calculates the normalized values of length and weight are exactly the same and thus repeated. This makes errors hard to spot and is efficient code. A function should be written to perform this task.
 
 When you find yourself copy-pasting lines of code, it's time to write a
 function, instead!
@@ -96,6 +129,22 @@ function, instead!
 ```{r}
 #| label: write-rescale-function
 
+rescale_01 <- function(input_vector) {
+  # Check if the input vector is numeric
+  if (!is.numeric(input_vector)) {
+    stop("Error: The input vector must be numeric.")
+  }
+  
+  # Check if the length of the input vector is greater than 1
+  if (length(input_vector) <= 1) {
+    stop("Error: The input vector must have more than one element.")
+  }
+  # Get the range of the input vector (min and max values)
+  min_max <- range(input_vector, na.rm = TRUE)
+  # Calculate the normalized vector using the range
+  normalized_vector <- (input_vector - min_max[1]) / (min_max[2] - min_max[1])
+  return(normalized_vector)
+}
 ```
 
 ::: callout-tip
@@ -143,15 +192,24 @@ statement in order to create a `length_scaled` variable.
 
 ```{r}
 #| label: compare-original-with-rescaled-lengths
+#| layout: grid
+#| fig.show: "hold"
+#| layout-ncol: 2
 
-fish |>  
+
+data |>  
   ggplot(aes(x = length)) + 
   geom_histogram(binwidth = 45) +
   labs(x = "Original Values of Fish Length (mm)") +
   scale_y_continuous(limits = c(0,4000))
 
 # Code for Q7 plot.
-
+data |>
+  mutate(length_scaled = rescale_01(length)) |>
+  ggplot(aes(x = length_scaled)) + 
+  geom_histogram(binwidth = 0.045) +
+  labs(x = "Scaled Values of Fish Length (mm)") +
+  scale_y_continuous(limits = c(0,4000))
 ```
 
 ::: callout-tip
@@ -184,6 +242,17 @@ section of R for Data Science!
 ```{r}
 #| label: rescale-data-frame-function
 
+rescale_column <- function(df, var_names) {
+  df |> 
+    mutate(
+      across(
+        {{var_names}},
+        ~ rescale_01(.),
+        .names = "{.col}"
+      )
+    )
+}
+
 ```
 
 **9. Use your `rescale_column()` function to rescale *both* the `length` and `weight` columns.**
@@ -195,4 +264,5 @@ I expect that you carry out this process by calling the `rescale_column()` funct
 ```{r}
 #| label: rescale-two-columns
 
+rescale_column(data, c("length", "weight"))
 ```
